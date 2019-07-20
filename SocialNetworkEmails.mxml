@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:Group xmlns:fx="http://ns.adobe.com/mxml/2009" 
+		 xmlns:s="library://ns.adobe.com/flex/spark" creationComplete="loadEmails()" 
+		 xmlns:mx="library://ns.adobe.com/flex/mx" width="336" height="158">
+	<fx:Declarations>
+		<!-- Place non-visual elements (e.g., services, value objects) here -->
+	</fx:Declarations>
+	<fx:Script>
+		<![CDATA[
+			import mx.controls.Alert;
+			import mx.utils.ObjectUtil;
+			import mx.core.FlexGlobals;
+			
+			[Bindable] public var _fbemailaddress:String = "";
+			[Bindable] public var _flickremailaddress:String = "";
+			[Bindable] public var _cbxFBBln:Boolean = false;
+			[Bindable] public var _cbxFlickrBln:Boolean = false;
+			
+			private function loadEmails(): void {
+				_fbemailaddress = FlexGlobals.topLevelApplication._fbemailaddress;
+				_flickremailaddress = FlexGlobals.topLevelApplication._flickremailaddress;
+			}
+			
+			private function saveSNE(): void {
+				if (tiFBEmail.text != '' && tiFlckrEmail.text != '') {
+					_fbemailaddress = tiFBEmail.text;
+					_flickremailaddress = tiFlckrEmail.text;
+					FlexGlobals.topLevelApplication.blnUpdateSNEs = true;
+					FlexGlobals.topLevelApplication.saveInfo();
+				} else {
+					Alert.show("You must enter your own personal 'upload email addresses' for your Facebook and Flickr accounts.", "Ooops", 4, null, null, FlexGlobals.topLevelApplication.imgAlert, 4);
+					FlexGlobals.topLevelApplication.blnUpdateSNEs = false;
+					FlexGlobals.topLevelApplication.saveInfo();
+				}
+			}
+		]]>
+	</fx:Script>
+	
+	<s:Label x="84" y="10" text="Facebook uploads email:" textAlign="right" width="140"/>
+	<s:TextInput x="84" y="30" width="212" id="tiFBEmail" text="{(_fbemailaddress!='')?_fbemailaddress:''}"/>
+	<s:Label x="84" y="69" text="Flickr uploads email:" textAlign="left" width="140"/>
+	<s:TextInput x="84" y="89" width="212" id="tiFlckrEmail" text="{(_flickremailaddress!='')?_flickremailaddress:''}"/>
+	<s:Button x="126" y="119" label="Save" id="btnSave" click="saveSNE()"/>
+	<s:CheckBox id="cbxFB" click="{(cbxFB.selected)?_cbxFBBln=true:_cbxFBBln=false}" selected="{(_cbxFBBln)?true:false}" x="41" y="31" label="{(cbxFB.selected)?'on':'off'}" toolTip="Check to include a Facebook upload email"/>
+	<s:CheckBox id="cbxFkr" click="{(cbxFkr.selected)?_cbxFlickrBln=true:_cbxFlickrBln=false}" selected="{(_cbxFlickrBln)?true:false}" x="41" y="90" label="{(cbxFkr.selected)?'on':'off'}" toolTip="Check to include a Flickr upload email"/>
+</s:Group>

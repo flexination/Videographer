@@ -1,0 +1,229 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:Application xmlns:fx="http://ns.adobe.com/mxml/2009"
+			   xmlns:s="library://ns.adobe.com/flex/spark"
+			   xmlns:mx="library://ns.adobe.com/flex/mx"
+			   xmlns:comp="*"
+			   width="736" height="396" applicationComplete="getDomain()"
+			   creationComplete="initSO()" preinitialize="preinit()"
+			   viewSourceURL="srcview/index.html">
+	
+	<fx:Declarations>
+		<mx:RemoteObject id="roImageService" 			
+			 destination="ColdFusion" 
+			 endpoint="{_remoteGateway}"
+			 source="{_cfcPath}" 
+			 showBusyCursor="true">
+			<mx:method name="doUpload" result="doUploadHandler(event)" fault="roFaultHandler(event)"/>
+			<mx:method name="sendImgToSocialNetworks" result="sendImgToSocialNetworksHandler(event)" fault="roFaultHandler(event)"/>
+		</mx:RemoteObject>
+	</fx:Declarations>
+	
+	<fx:Script>
+		<![CDATA[
+			import info.airination.actionscripts.CameraStream;
+			import info.airination.actionscripts.ImageProcessingService;
+			import info.airination.actionscripts.PNGEnc;
+			
+			import mx.controls.Alert;
+			import mx.core.FlexGlobals;
+			import mx.core.UIComponent;
+			import mx.managers.CursorManager;
+			import mx.rpc.events.FaultEvent;
+			import mx.rpc.events.ResultEvent;
+			import mx.utils.ObjectUtil;
+			import mx.utils.UIDUtil;
+			import mx.utils.URLUtil;
+			
+			private var domain:String = "";
+			private var camStream:CameraStream;
+			private var uiComp:UIComponent;
+			private var _service:ImageProcessingService;
+			private var fname:String = "";
+			private var blnError:Boolean = false;
+			private var myTimer:Timer = new Timer(100, 0);
+			private var soUpdateSNEs:SharedObject = SharedObject.getLocal("UpdateSNEs");
+			private var xmlSuccess:XML;
+			private var myTimer5:Timer = new Timer(2000, 0);
+			
+			[Embed(source="assets/images/clark.png")] public var imgAlert:Class;
+			
+			[Bindable] private var _remoteGateway:String = "http://localhost/flex2gateway/";
+			[Bindable] private var _cfcPath:String = "flextraining.Videographer4Web.info.airination.cfcs.EmailGateway";
+			[Bindable] private var blnUploadComplete:Boolean = false;
+			[Bindable] private var blnCamRunning:Boolean = false;
+			[Bindable] private var blnCaptured:Boolean = false;
+			[Bindable] public var blnUpdateSNEs:Boolean = false;
+			[Bindable] private var _imageURL:String = "";
+			[Bindable] private var _imageName:String = "";
+			[Bindable] private var blnResult:Boolean = false;
+			
+			public function preinit(): void {
+				_service = ImageProcessingService.instance;
+			}
+			
+			private function getDomain(): void {
+				domain = URLUtil.getServerName(FlexGlobals.topLevelApplication.loaderInfo.url);
+				_remoteGateway = "http://" + domain + "/flex2gateway/";
+				//Alert.show(_remoteGateway);
+				if (domain == "labs.webhtml5.info") {
+					_cfcPath = "Videographer4Web.info.airination.cfcs.EmailGateway";
+				}
+				if (domain == "labs.insideflex.com") {
+					_cfcPath = "flextraining.Videographer4Web.info.airination.cfcs.EmailGateway";
+				}
+				//Alert.show(_cfcPath);
+				loadImage();
+			}
+
+			private function initSO(): void {
+				CheckSO();
+			}
+			
+			private function CheckSO(): void {
+				if (soUpdateSNEs==null) {
+					Alert.show("Cannot create shared object", "Error");
+				} else {
+					if (soUpdateSNEs.data.blnUpdateSNEs!=undefined) {
+						blnUpdateSNEs=soUpdateSNEs.data.blnUpdateSNEs;
+						SNE._fbemailaddress=soUpdateSNEs.data.fbemailaddress;
+						SNE._flickremailaddress=soUpdateSNEs.data.flickremailaddress;
+						SNE._cbxFBBln=soUpdateSNEs.data.cbxFBBln;
+						SNE._cbxFlickrBln=soUpdateSNEs.data.cbxFlickrBln;
+						//Alert.show("FB Email: " + SNE._cbxFBBln +"\nFlickr Email: " + SNE._cbxFlickrBln);
+					} else {
+						saveInfo();
+					}
+				}
+			}
+			
+			public function saveInfo(): void {
+				soUpdateSNEs.data.blnUpdateSNEs=blnUpdateSNEs;
+				soUpdateSNEs.data.fbemailaddress=SNE._fbemailaddress.toString();
+				soUpdateSNEs.data.flickremailaddress=SNE._flickremailaddress.toString();
+				soUpdateSNEs.data.cbxFBBln=SNE._cbxFBBln;
+				soUpdateSNEs.data.cbxFlickrBln=SNE._cbxFlickrBln;
+			}
+			
+			private function clearInfo(): void {
+				soUpdateSNEs.data.blnUpdateSNEs=false;
+				soUpdateSNEs.data.fbemailaddress="fill_in_your_email@m.facebook.com";
+				soUpdateSNEs.data.flickremailaddress="fill_in_your_email@photos.flickr.com";
+				soUpdateSNEs.data.cbxFBBln = false;
+				soUpdateSNEs.data.cbxFlickrBln = false;
+				CheckSO();
+			}
+			
+			private function loadImage(): void {
+				img.source = "http://" + domain + "/prototypes/files/ImageToPDF.png";
+			}
+
+			private function attachCameraStream(): void {
+				img.source = null;
+				camStream = new CameraStream();
+				var ref : UIComponent = new UIComponent();
+				pnlVideo.addElement(ref);
+				ref.addChild(camStream);
+				myTimer.addEventListener("timer", onDisplay);
+				myTimer.start();
+			}
+			
+			private function onDisplay(event:TimerEvent): void {
+				blnCamRunning = camStream.blnActive;
+				if (blnCamRunning) {
+					CursorManager.removeBusyCursor();
+					myTimer.removeEventListener("timer", onDisplay);
+					myTimer.stop();
+				}
+			}
+			
+			private function captureSnapshot(): void {
+				tgpImages.removeAllElements();
+				var uiComp:UIComponent = new UIComponent();
+				uiComp.width = camStream._cameraWidth;
+				uiComp.height = camStream._cameraHeight;
+				uiComp.addChild(camStream.getSnapshot());
+				tgpImages.addElement(uiComp);
+				var bd:BitmapData = new BitmapData(uiComp.width,uiComp.height);
+				bd.draw(uiComp);
+				var ba:ByteArray = info.airination.actionscripts.PNGEnc.encode(bd);
+				roImageService.doUpload(ba);
+				blnCaptured = true;
+			}
+			
+			private function doUpload(): void {
+				blnUploadComplete = false;
+				lblStatus.text = 'uploading image';
+				this.enabled = false;
+				var bd:BitmapData = new BitmapData(img.width,img.height);
+				bd.draw(img);
+				var ba:ByteArray = info.airination.actionscripts.PNGEnc.encode(bd);
+				roImageService.doUpload(ba);
+				blnCaptured = true;
+			}
+			
+			private function onTimer5(event:TimerEvent): void {
+				myTimer5.removeEventListener("timer", onTimer5);
+				lblStatus.text = "";
+			}			
+			
+			private function doUploadHandler(event:ResultEvent): void {
+				this.enabled = true;
+				fname = event.result as String;
+				blnCamRunning = false;
+				lblStatus.text = "image capture uploaded to the web";
+				myTimer5.addEventListener("timer", onTimer5);
+				myTimer5.start();
+				roImageService.sendImgToSocialNetworks(soUpdateSNEs.data.fbemailaddress, soUpdateSNEs.data.cbxFBBln, soUpdateSNEs.data.flickremailaddress, soUpdateSNEs.data.cbxFlickrBln, fname + ".png", tiCaption.text);
+			}
+			
+			private function sendImgToSocialNetworksHandler(event:ResultEvent): void {
+				CursorManager.removeBusyCursor();
+				if (event.result) {
+					if (soUpdateSNEs.data.cbxFBBln && soUpdateSNEs.data.cbxFlickrBln) {
+						lblStatus.text = "image capture sent to facebook and flickr";
+					} else if (soUpdateSNEs.data.cbxFBBln && !soUpdateSNEs.data.cbxFlickrBln) {
+						lblStatus.text = "image capture sent to facebook";
+					} else if (!soUpdateSNEs.data.cbxFBBln && soUpdateSNEs.data.cbxFlickrBln) {
+						lblStatus.text = "image capture sent to flickr";
+					} else {
+						lblStatus.text = "image capture only uploaded";
+					}
+					myTimer5.addEventListener("timer", onTimer5);
+					myTimer5.start();
+				} else {
+					Alert.show("Image capture NOT sent to facebook\n\nMake sure to edit the config.xml file and replace the fbemailaddress with your personal facebook email upload address.", "Ooops", 4, null, null, imgAlert, 4);
+				}
+			}
+			
+			private function roFaultHandler(event:FaultEvent): void {
+				if (blnError) {
+					// dump error message
+					Alert.show(ObjectUtil.toString(event.fault), "Ooops", 4, null, null, imgAlert, 4);
+				} else {
+					blnError = true;
+				}
+			}
+			
+			private function viewSrc(): void {
+				var u:URLRequest = new URLRequest("http://labs.insideflex.com/flextraining/Videographer4Web/srcview/index.html");
+				navigateToURL(u,"_blank");
+			}
+		]]>
+	</fx:Script>
+	<s:HGroup x="52" y="36" width="647" height="300">
+		<s:Panel id="pnlVideo" title="Your Live Video" width="320" height="299">
+			<s:Image id="img" click="{(img.source!=null)?btnUpload.enabled=true:btnUpload.enabled=false}" x="10" y="10" width="298" height="226"/>
+			<s:Button id="btnCapture" mouseUp="{(!blnCamRunning)?CursorManager.setBusyCursor():null}" click="{(!blnCamRunning)?attachCameraStream():captureSnapshot()}" x="124" y="244" label="{(blnCamRunning)?'Capture':'Start Cam'}"/>
+		</s:Panel>
+		<s:Panel title="Your Snapshot" x="306" y="52" width="320" height="299">
+			<s:TileGroup id="tgpImages" x="0" y="0" width="320" height="240" />
+			<comp:SocialNetworkEmails id="SNE"  x="-10" y="60" visible="{(!blnUpdateSNEs)?true:false}"/>
+			<s:Button id="btnUpload" click="doUpload()" x="120" y="244" label="Upload" enabled="{(blnCaptured)?true:false}"/>
+			<s:TextInput x="198" y="244" width="110" id="tiCaption" text="my video capture" toolTip="This text will be used as the caption for your photo." visible="{(blnCamRunning)?true:false}"/>
+		</s:Panel>
+	</s:HGroup>
+	<mx:LinkButton id="btnViewSrc" x="329" y="343" height="21" label="View Source" buttonMode="true"
+				   click="viewSrc()" textDecoration="underline" useHandCursor="true"/>
+	<mx:Image x="425" y="344" source="assets/images/facebook-icon.gif" click="clearInfo()" toolTip="Click to reset the 'facebook uploads email' address." buttonMode="true" useHandCursor="true" width="16" height="16" id="btnFBReset"/>
+	<s:Label id="lblStatus" x="52" y="343" width="281" height="21" textAlign="center"/>
+</s:Application>
